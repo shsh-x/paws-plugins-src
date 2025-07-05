@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DB Test Plugin</title>
+    <!-- We use the Paws UI Kit for consistent styling -->
+    <link rel="stylesheet" href="ui-kit.css">
+    <style>
+        body { padding: 20px; text-align: center; }
+        #result { margin-top: 20px; padding: 15px; background-color: #2a2a2e; border-radius: 8px; min-height: 40px; }
+        .button-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; }
+        .warning { font-size: 0.9em; color: #ffcc00; margin-top: 20px; }
+        .paws-button { flex-grow: 1; min-width: 200px; }
+    </style>
+</head>
+<body>
+    <h1>Database Test</h1>
+    <p>Click the buttons to ask the C# backend to interact with your osu! databases.</p>
+    
+    <div class="button-group">
+        <button id="lazer-read-btn" class="paws-button primary">Count Lazer Beatmaps</button>
+        <button id="stable-read-btn" class="paws-button primary">Count Stable Beatmaps</button>
+        <button id="lazer-write-btn" class="paws-button secondary">Test Lazer Write Access</button>
+        <!-- NEW BUTTON -->
+        <button id="stable-write-btn" class="paws-button secondary">Test Stable Write Access</button>
+    </div>
+
+    <p class="warning"><strong>Warning:</strong> For write tests, please ensure the respective osu! client is completely closed!</p>
+    
+    <div id="result">...</div>
+
+    <script src="paws-frontend-api.js"></script>
+    <script>
+        const resultDiv = document.getElementById('result');
+
+        // Lazer Read Test
+        document.getElementById('lazer-read-btn').addEventListener('click', async () => {
+            resultDiv.textContent = 'Asking the backend for Lazer DB...';
+            try {
+                const response = await window.paws.executeCommand('get-beatmap-count');
+                resultDiv.textContent = response;
+            } catch (error) {
+                resultDiv.textContent = `Error: ${error.message}`;
+            }
+        });
+
+        // Stable Read Test
+        document.getElementById('stable-read-btn').addEventListener('click', async () => {
+            resultDiv.textContent = 'Asking for Stable DB (this may take a moment on first run)...';
+            try {
+                const response = await window.paws.executeCommand('get-stable-beatmap-count');
+                resultDiv.textContent = response;
+            } catch (error) {
+                resultDiv.textContent = `Error: ${error.message}`;
+            }
+        });
+
+        // Lazer Write Test
+        document.getElementById('lazer-write-btn').addEventListener('click', async () => {
+            resultDiv.textContent = 'Attempting safe write to Lazer DB...';
+            try {
+                const response = await window.paws.executeCommand('test-lazer-write');
+                resultDiv.textContent = response;
+            } catch (error) {
+                resultDiv.textContent = `Error: ${error.message}`;
+            }
+        });
+        
+        // --- NEW EVENT LISTENER ---
+        document.getElementById('stable-write-btn').addEventListener('click', async () => {
+            resultDiv.textContent = 'Attempting safe write for Stable DB...';
+            try {
+                const response = await window.paws.executeCommand('test-stable-write');
+                resultDiv.textContent = response;
+            } catch (error) {
+                resultDiv.textContent = `Error: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>

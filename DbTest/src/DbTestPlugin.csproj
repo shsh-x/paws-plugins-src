@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 
+      THE FIX: Add PrivateAssets="all" to both package references.
+      This makes the plugin use the libraries for compiling but does NOT
+      bundle the DLLs, keeping the plugin small and preventing conflicts.
+      The plugin will use the versions provided by the main Paws.Host at runtime.
+    -->
+    <PackageReference Include="OsuParsers" Version="1.7.2" PrivateAssets="all" />
+    <PackageReference Include="Realm" Version="12.5.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- This reference to the framework's abstractions remains the same -->
+    <Reference Include="Paws.Core.Abstractions">
+      <HintPath>..\..\pawsprtp\Paws.DotNet\Paws.Core.Abstractions\bin\Release\net8.0\Paws.Core.Abstractions.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>
