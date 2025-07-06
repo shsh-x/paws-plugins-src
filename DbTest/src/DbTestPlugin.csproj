@@ -4,24 +4,50 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Define the base output path for our custom packaging target -->
+    <PawsPluginPackageDir>$(MSBuildProjectDirectory)\..\..\COMPILED\$(ProjectName)\</PawsPluginPackageDir>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- 
-      THE FIX: Add PrivateAssets="all" to both package references.
-      This makes the plugin use the libraries for compiling but does NOT
-      bundle the DLLs, keeping the plugin small and preventing conflicts.
-      The plugin will use the versions provided by the main Paws.Host at runtime.
-    -->
+    <!-- Use PrivateAssets to prevent these DLLs from being copied to the output directory. -->
+    <!-- The plugin will use the versions provided by the Paws.Host at runtime. -->
     <PackageReference Include="OsuParsers" Version="1.7.2" PrivateAssets="all" />
     <PackageReference Include="Realm" Version="12.5.0" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- This reference to the framework's abstractions remains the same -->
+    <!-- This reference tells the compiler how to find the framework abstractions. -->
+    <!-- Update this HintPath if your Paws framework project is in a different location. -->
     <Reference Include="Paws.Core.Abstractions">
-      <HintPath>..\..\pawsprtp\Paws.DotNet\Paws.Core.Abstractions\bin\Release\net8.0\Paws.Core.Abstractions.dll</HintPath>
+      <HintPath>..\..\..\pawsprtp\Paws.DotNet\Paws.Core.Abstractions\bin\Release\net8.0\Paws.Core.Abstractions.dll</HintPath>
+      <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <!-- This target automatically packages the plugin into a clean folder for distribution. -->
+  <Target Name="PackagePawsPlugin" AfterTargets="Build" Condition=" '$(Configuration)' == 'Release' ">
+    <Message Text="--- Packaging Paws Plugin for Release ---" Importance="high" />
+    
+    <!-- Clean the destination directory first -->
+    <RemoveDir Directories="$(PawsPluginPackageDir)" />
+    <MakeDir Directories="$(PawsPluginPackageDir)" />
+    
+    <!-- Copy the main plugin DLL -->
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PawsPluginPackageDir)" />
+    <Message Text="Copied DLL: $(TargetPath) -> $(PawsPluginPackageDir)" Importance="normal" />
+
+    <!-- Copy the manifest file -->
+    <Copy SourceFiles="$(ProjectDir)plugin.json" DestinationFolder="$(PawsPluginPackageDir)" />
+    <Message Text="Copied manifest: $(ProjectDir)plugin.json -> $(PawsPluginPackageDir)" Importance="normal" />
+
+    <!-- Copy the entire UI folder -->
+    <ItemGroup>
+      <UiFiles Include="$(ProjectDir)..\ui\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(UiFiles)" DestinationFolder="$(PawsPluginPackageDir)ui\%(RecursiveDir)" />
+    <Message Text="Copied UI folder -> $(PawsPluginPackageDir)ui\" Importance="normal" />
+
+    <Message Text="--- Plugin packaging complete! ---" Importance="high" />
+  </Target>
 
 </Project>

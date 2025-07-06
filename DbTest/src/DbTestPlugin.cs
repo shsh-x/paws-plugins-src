@@ -1,5 +1,5 @@
 using Paws.Core.Abstractions;
-using System;
+using System.Text.Json;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -19,8 +19,8 @@ public class DbTestPlugin : IFunctionalExplicitPlugin
     // --- IPlugin Properties ---
     public Guid Id => new("a1b2c3d4-e5f6-4a9b-8c7d-6e5f4a3b2c1d");
     public string Name => "DB Test";
-    public string Description => "A plugin to test reading/writing to Lazer and Stable databases.";
-    public string Version => "1.0.1";
+    public string Description => "A plugin to test reading/writing to Lazer and Stable databases based on the selected mode.";
+    public string Version => "1.1.0";
 
     // --- IFunctionalExplicitPlugin Properties ---
     public string IconName => "database"; // A placeholder name for an icon in the UI
@@ -34,170 +34,121 @@ public class DbTestPlugin : IFunctionalExplicitPlugin
         // We receive the host services from the framework and store the reference.
         // This is how the plugin will talk to the rest of Paws.
         _hostServices = hostServices;
-        _hostServices.LogMessage("DB Test Plugin Initialized!", LogLevel.Information, Name);
+        _hostServices.LogMessage("DB Test Plugin Initialized!", PawsLogLvl.Information, Name);
     }
 
     /// <summary>
     /// This method is called by the framework when the plugin's UI sends a command.
-    /// It acts as a router to the correct internal method.
+    /// It acts as a router to the correct internal method based on the current client mode.
     /// </summary>
     public async Task<object?> ExecuteCommandAsync(string commandName, object? payload)
     {
-        switch (commandName)
+        // Deserialize the payload to get the mode.
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var commandPayload = JsonSerializer.Deserialize<CommandPayload>(JsonSerializer.Serialize(payload), options);
+        
+        // Default to "stable" if the mode is not provided for safety.
+        string mode = commandPayload?.Mode ?? "stable"; 
+
+        return commandName switch
         {
-            case "get-beatmap-count":
-                return GetBeatmapCount();
-
-            case "test-lazer-write":
-                return await TestLazerWriteAsync();
-
-            case "get-stable-beatmap-count":
-                return await GetStableBeatmapCountAsync();
-            
-            case "test-stable-write":
-                return await TestStableWriteAsync();
-
-            default:
-                _hostServices.LogMessage($"Unknown command received: {commandName}", LogLevel.Warning, Name);
-                return null;
-        }
-    }
-
-    /// <summary>
-    /// Performs a read-only test by counting the beatmaps in the lazer database.
-    /// </summary>
-    private string GetBeatmapCount()
-    {
-        try
-        {
-            using var db = _hostServices.GetLazerDatabase();
-
-            if (db == null)
-                return "Error: Lazer database path is not set or file is inaccessible.";
-            
-            var beatmaps = db.DynamicApi.All("Beatmap");
-            return $"Found {beatmaps.Count} beatmap difficulties in the lazer database.";
-        }
-        catch (Exception ex)
-        {
-            _hostServices.LogMessage($"Error reading from Lazer DB: {ex.Message}", LogLevel.Error, Name);
-            return $"An unexpected error occurred during read: {ex.Message}";
-        }
-    }
-
-    /// <summary>
-    /// Performs a write test by safely modifying a beatmap set in the lazer database.
-    /// </summary>
-    private async Task<string> TestLazerWriteAsync()
-    {
-        try
-        {
-            string resultMessage = "Could not find an unprotected beatmap set to test with.";
-
-            await _hostServices.PerformLazerWriteAsync(db =>
-            {
-                dynamic? firstSet = db.DynamicApi.All("BeatmapSet").Filter("Protected == false").FirstOrDefault();
-
-                if (firstSet != null)
-                {
-                    bool originalValue = firstSet.DeletePending;
-                    firstSet.DeletePending = !originalValue;
-                    firstSet.DeletePending = originalValue;
-
-                    dynamic? firstBeatmap = null;
-                    foreach (var beatmap in firstSet.Beatmaps)
-                    {
-                        firstBeatmap = beatmap;
-                        break;
-                    }
-
-                    resultMessage = $"Success! Performed a safe test write on Lazer beatmap set: '{firstBeatmap?.Metadata?.Title ?? "[No Title Found]"}'";
-                }
-            });
-
-            return resultMessage;
-        }
-        catch (LazerIsRunningException ex)
-        {
-            return $"Error: {ex.Message}";
-        }
-        catch (Exception ex)
-        {
-            _hostServices.LogMessage($"Unexpected error during Lazer write test: {ex.Message}", LogLevel.Error, Name);
-            return $"An unexpected error occurred: {ex.Message}";
-        }
+            "test-read" => await TestReadAsync(mode),
+            "test-write" => await TestWriteAsync(mode),
+            _ => throw new ArgumentException($"Unknown command received: {commandName}"),
+        };
     }
     
     /// <summary>
-    /// Performs a read test by counting the beatmaps in the stable database.
+    /// Performs a read test on the appropriate database based on the provided mode.
     /// </summary>
-    private async Task<string> GetStableBeatmapCountAsync()
+    private async Task<string> TestReadAsync(string mode)
     {
-        try
+        if (mode == "lazer")
         {
-            _hostServices.LogMessage("Requesting stable osu!.db...", LogLevel.Information, Name);
-            var osuDb = await _hostServices.GetStableOsuDbAsync() as OsuDatabase;
-
-            if (osuDb == null)
-                return "Error: Could not parse osu!.db. Is the stable path set correctly in settings?";
-
-            return $"Found {osuDb.Beatmaps.Count} beatmap difficulties in the stable database.";
+            using var db = _hostServices.GetLazerDatabase();
+            if (db == null) return "Error: Lazer database path is not set or file is inaccessible.";
+            
+            var beatmaps = db.DynamicApi.All("Beatmap");
+            return $"Lazer Mode: Found {beatmaps.Count} beatmap difficulties.";
         }
-        catch (Exception ex)
+        else // Stable Mode
         {
-            _hostServices.LogMessage($"Error reading from stable DB: {ex.Message}", LogLevel.Error, Name);
-            return $"An unexpected error occurred: {ex.Message}";
+            var osuDb = await _hostServices.GetStableOsuDbAsync() as OsuDatabase;
+            if (osuDb == null) return "Error: Could not parse osu!.db. Is the stable path set correctly?";
+            
+            return $"Stable Mode: Found {osuDb.Beatmaps.Count} beatmap difficulties.";
         }
     }
 
     /// <summary>
-    /// Performs a safe write test for the stable database.
+    /// Performs a safe write test on the appropriate database based on the provided mode.
     /// </summary>
-    private async Task<string> TestStableWriteAsync()
+    private async Task<string> TestWriteAsync(string mode)
     {
-        try
+        if (mode == "lazer")
         {
-            string resultMessage = "Write test completed.";
-
-            await _hostServices.PerformStableWriteAsync(stablePath =>
+            try
             {
-                var dbPath = Path.Combine(stablePath, "osu!.db");
-                if (!File.Exists(dbPath))
+                string resultMessage = "Lazer Mode: Could not find an unprotected beatmap set to test with.";
+                await _hostServices.PerformLazerWriteAsync(db =>
                 {
-                    resultMessage = "Error: osu!.db not found in the stable directory.";
-                    return;
-                }
+                    dynamic? firstSet = db.DynamicApi.All("BeatmapSet").Filter("Protected == false").FirstOrDefault();
+                    if (firstSet == null) return;
 
-                var db = DatabaseDecoder.DecodeOsu(dbPath);
-                var originalName = db.PlayerName;
-                db.PlayerName = "Paws Write Test!";
-                
-                var tempPath = Path.Combine(Path.GetTempPath(), "paws_stable_write_test.db");
-                
-                // Note: The public API for saving is on the object itself.
-                db.Save(tempPath);
-                
-                if (File.Exists(tempPath))
+                    // Perform a harmless write operation by flipping a boolean and flipping it back.
+                    bool originalValue = firstSet.DeletePending;
+                    firstSet.DeletePending = !originalValue;
+                    firstSet.DeletePending = originalValue; 
+                    resultMessage = $"Lazer Mode: Success! Performed a safe test write.";
+                });
+                return resultMessage;
+            }
+            catch (Exception ex) 
+            {
+                _hostServices.LogMessage($"Lazer write test failed: {ex.Message}", PawsLogLvl.Error, Name);
+                return $"Lazer Mode Error: {ex.Message}"; 
+            }
+        }
+        else // Stable Mode
+        {
+            try
+            {
+                string resultMessage = "Stable Mode Write: Test completed.";
+                await _hostServices.PerformStableWriteAsync(stablePath =>
                 {
-                    File.Delete(tempPath);
-                    resultMessage = $"Success! Safely wrote a test DB for player '{originalName}'.";
-                }
-                else
-                {
-                    resultMessage = "Error: A test DB was created in memory but failed to write to the temp directory.";
-                }
-            });
+                    var dbPath = Path.Combine(stablePath, "osu!.db");
+                    if (!File.Exists(dbPath)) 
+                    {
+                        resultMessage = "Error: osu!.db not found in the stable directory.";
+                        return;
+                    }
 
-            return resultMessage;
-        }
-        catch (StableIsRunningException ex)
-        {
-            return $"Error: {ex.Message}";
-        }
-        catch (Exception ex)
-        {
-            _hostServices.LogMessage($"Unexpected error during stable write test: {ex.Message}", LogLevel.Error, Name);
-            return $"An unexpected error occurred: {ex.Message}";
+                    var db = DatabaseDecoder.DecodeOsu(dbPath);
+                    var tempPath = Path.Combine(Path.GetTempPath(), "paws_stable_write_test.db");
+                    
+                    // The "write" is saving to a temporary file, not overwriting the original.
+                    db.Save(tempPath);
+                    
+                    if (File.Exists(tempPath)) 
+                    {
+                        File.Delete(tempPath); // Clean up the temp file
+                    }
+
+                    resultMessage = "Stable Mode: Success! Performed a safe test write.";
+                });
+                return resultMessage;
+            }
+            catch (Exception ex) 
+            {
+                _hostServices.LogMessage($"Stable write test failed: {ex.Message}", PawsLogLvl.Error, Name);
+                return $"Stable Mode Error: {ex.Message}"; 
+            }
         }
     }
+
+    /// <summary>
+    /// A simple private record used to deserialize the JSON payload from the frontend.
+    /// This makes accessing payload properties clean and type-safe.
+    /// </summary>
+    private record CommandPayload(string Mode);
 }

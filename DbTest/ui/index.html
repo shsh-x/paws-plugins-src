@@ -3,79 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <title>DB Test Plugin</title>
-    <!-- We use the Paws UI Kit for consistent styling -->
-    <link rel="stylesheet" href="ui-kit.css">
+    <link rel="stylesheet" href="paws-app://ui-kit.css">
     <style>
         body { padding: 20px; text-align: center; }
         #result { margin-top: 20px; padding: 15px; background-color: #2a2a2e; border-radius: 8px; min-height: 40px; }
-        .button-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; }
+        .button-group { display: flex; justify-content: center; gap: 15px; }
         .warning { font-size: 0.9em; color: #ffcc00; margin-top: 20px; }
-        .paws-button { flex-grow: 1; min-width: 200px; }
     </style>
 </head>
 <body>
     <h1>Database Test</h1>
-    <p>Click the buttons to ask the C# backend to interact with your osu! databases.</p>
+    <p>Click the buttons to test the database for the currently selected client mode.</p>
     
     <div class="button-group">
-        <button id="lazer-read-btn" class="paws-button primary">Count Lazer Beatmaps</button>
-        <button id="stable-read-btn" class="paws-button primary">Count Stable Beatmaps</button>
-        <button id="lazer-write-btn" class="paws-button secondary">Test Lazer Write Access</button>
-        <!-- NEW BUTTON -->
-        <button id="stable-write-btn" class="paws-button secondary">Test Stable Write Access</button>
+        <button id="read-btn" class="paws-button primary">Test Read Access</button>
+        <button id="write-btn" class="paws-button secondary">Test Write Access</button>
     </div>
 
     <p class="warning"><strong>Warning:</strong> For write tests, please ensure the respective osu! client is completely closed!</p>
     
-    <div id="result">...</div>
+    <div id="result">Waiting for mode...</div>
 
-    <script src="paws-frontend-api.js"></script>
+    <!-- THIS SCRIPT IS THE ONLY THING THAT CHANGES -->
+    <script src="paws-app://paws-frontend-api.js"></script>
     <script>
         const resultDiv = document.getElementById('result');
+        let currentMode = 'stable';
 
-        // Lazer Read Test
-        document.getElementById('lazer-read-btn').addEventListener('click', async () => {
-            resultDiv.textContent = 'Asking the backend for Lazer DB...';
-            try {
-                const response = await window.paws.executeCommand('get-beatmap-count');
-                resultDiv.textContent = response;
-            } catch (error) {
-                resultDiv.textContent = `Error: ${error.message}`;
+        // --- THE FIX ---
+        // 1. Get the plugin's own ID from the URL search parameters.
+        const urlParams = new URLSearchParams(window.location.search);
+        const pluginId = urlParams.get('pluginId');
+
+        window.paws.onNotice((notice) => {
+            if (notice.type === 'mode-changed') {
+                currentMode = notice.mode;
+                resultDiv.textContent = `Mode changed to: ${currentMode}. Ready to test.`;
             }
         });
 
-        // Stable Read Test
-        document.getElementById('stable-read-btn').addEventListener('click', async () => {
-            resultDiv.textContent = 'Asking for Stable DB (this may take a moment on first run)...';
-            try {
-                const response = await window.paws.executeCommand('get-stable-beatmap-count');
-                resultDiv.textContent = response;
-            } catch (error) {
-                resultDiv.textContent = `Error: ${error.message}`;
+        // 2. Create a new helper function that uses the correct `window.paws.post` method.
+        async function executeTest(command) {
+            if (!pluginId) {
+                resultDiv.textContent = "Error: Could not determine plugin ID. Cannot send command.";
+                return;
             }
-        });
+            
+            resultDiv.textContent = `Asking backend to '${command}' for ${currentMode} mode...`;
 
-        // Lazer Write Test
-        document.getElementById('lazer-write-btn').addEventListener('click', async () => {
-            resultDiv.textContent = 'Attempting safe write to Lazer DB...';
             try {
-                const response = await window.paws.executeCommand('test-lazer-write');
+                // 3. Define the correct API endpoint and payload structure.
+                const endpoint = `/api/plugins/execute/${pluginId}`;
+                const body = {
+                    commandName: command,
+                    payload: { mode: currentMode } // The C# backend expects this structure
+                };
+                
+                // 4. Call the generic `post` function from the API bridge.
+                const response = await window.paws.post(endpoint, body);
                 resultDiv.textContent = response;
+
             } catch (error) {
                 resultDiv.textContent = `Error: ${error.message}`;
             }
-        });
+        }
         
-        // --- NEW EVENT LISTENER ---
-        document.getElementById('stable-write-btn').addEventListener('click', async () => {
-            resultDiv.textContent = 'Attempting safe write for Stable DB...';
-            try {
-                const response = await window.paws.executeCommand('test-stable-write');
-                resultDiv.textContent = response;
-            } catch (error) {
-                resultDiv.textContent = `Error: ${error.message}`;
-            }
-        });
+        document.getElementById('read-btn').addEventListener('click', () => executeTest('test-read'));
+        document.getElementById('write-btn').addEventListener('click', () => executeTest('test-write'));
     </script>
 </body>
 </html>
